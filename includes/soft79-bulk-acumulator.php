@@ -1,4 +1,6 @@
 <?php
+defined( 'ABSPATH' ) || exit;
+
 
 /**
  *  This class is used to acumulate the values of rules that apply to a product and return the new average/min/max price

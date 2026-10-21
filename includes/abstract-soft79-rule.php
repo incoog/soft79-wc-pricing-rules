@@ -1,4 +1,6 @@
 <?php
+defined( 'ABSPATH' ) || exit;
+
 
 abstract class SOFT79_Rule {
     public $id;
@@ -11,12 +13,17 @@ abstract class SOFT79_Rule {
         //Therefore this ugly method
         
         global $post;
-        $post = $this->post;
-        setup_postdata($post);
-        $content = apply_filters('the_content', $post->post_content);
-        wp_reset_postdata(); 
-        
-        return $content;
+        $previous_post = $post;
+        try {
+            $post = $this->post;
+            setup_postdata( $post );
+            return apply_filters( 'the_content', $post->post_content );
+        } finally {
+            $post = $previous_post;
+            if ( $post ) {
+                setup_postdata( $post );
+            }
+        }
     }
     
     /**

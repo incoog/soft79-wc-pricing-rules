@@ -1,15 +1,23 @@
-=== SOFT79 Pricing Rules for WooCommerce ===
-Contributors: josk79
+=== SOFT79 Pricing Rules for WooCommerce (Community fork) ===
+Contributors: josk79, incoog
 Tags: woocommerce, pricing, discount
-Requires at least: 4.0.0
-Tested up to: 5.6
-Stable tag: 1.4.4
+Requires at least: 6.5
+Requires PHP: 7.4
+Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
 Easily create bulk prices or discounts in WooCommerce.
 
 == Description ==
+
+Community maintenance fork of Soft79's original plugin. Existing settings, rule
+post types, metadata, translations and theme template overrides are retained.
+This fork provides an optional product exclusion API. It does not depend on a
+campaign plugin and does not include a campaign engine. See README.md and docs/.
+
+Original author: Soft79 (josk79). Fork maintenance: incoog.
+
 
 "Pricing Rules for WooCommerce" allows you to set bulk pricing rules to products. For example 5% off if customer buys 6 or more. 10% off if customer buys 12 or more.
 
@@ -59,6 +67,19 @@ function soft79_wcpr_min_max_price_html( $new_price_html, $original_price_html, 
 3. Optionally presents a table with available prices/discounts to the customer.
 
 == Changelog ==
+
+= 1.5.0 =
+*Release Date - 2026-10-21*
+* Community fork: versioned product pricing exclusion API.
+* Exclusion covers calculations, quantity accumulation, tables and variations.
+* Recalculate from the correct baseline when cart quantities or exclusions change.
+* Preserve different cart-line base prices for the same product ID.
+* Fix finite quantity tiers applying too many units on an individual cart line.
+* Retain upstream PHP 8.2 and controller options fixes.
+* Validate and protect admin saves; scope admin scripts and row actions.
+* Fix legacy PRO loader, variation table reset and description loop state.
+
+
 
 = 1.4.5 =
 *Release Date - ????-??-??*

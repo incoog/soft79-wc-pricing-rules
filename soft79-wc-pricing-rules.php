@@ -1,13 +1,21 @@
 <?php
 /**
- * Plugin Name: SOFT79 Pricing Rules for Woocommerce
- * Plugin URI: http://www.soft79.nl
- * Description: Pricing rules for WooCommerce
- * Version: 1.4.5-dev.1
- * WC requires at least: 3.0.0
- * WC tested up to: 4.7.1
- * Author: Soft79
- * License: GPL2
+ * Plugin Name: SOFT79 Pricing Rules for WooCommerce (Community fork)
+ * Plugin URI: https://github.com/incoog/soft79-wc-pricing-rules
+ * Description: SOFT79 pricing rules with maintenance fixes and an optional product exclusion API for campaign integrations.
+ * Version: 1.5.0
+ * Requires at least: 6.5
+ * Requires PHP: 7.4
+ * Requires Plugins: woocommerce
+ * WC requires at least: 8.0
+ * Author: Soft79, incoog
+ * License: GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain: soft79-wc-pricing-rules
+ * Domain Path: /languages
+ * Update URI: https://github.com/incoog/soft79-wc-pricing-rules
+ * SOFT79 Fork ID: incoog/soft79-wc-pricing-rules
+ * SOFT79 Fork API: 1
  */
 
 defined('ABSPATH') or die();
@@ -34,7 +42,7 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
     include_once('includes/soft79-rule-controller-pro.php');
 
     final class SOFT79_WC_Pricing_Rules_Plugin {
-        public $version = '1.4.5-dev.1';
+        public $version = '1.5.0';
 
         public $admin = null;
 
@@ -134,6 +142,16 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
             return $this->version;
         }
 
+        public function get_integration_info() {
+            return array(
+                'fork_id' => 'incoog/soft79-wc-pricing-rules',
+                'api_version' => 1,
+                'version' => $this->version,
+                'features' => array( 'product_pricing_exclusion' ),
+                'url' => 'https://github.com/incoog/soft79-wc-pricing-rules',
+            );
+        }
+
         /**
          * Get the plugin url.
          * @return string
@@ -177,6 +195,9 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
         }
 
         function price_html( $original_price_html, $product ) {
+            if ( ! $this->controller || ! SOFT79_Rule_Helpers::is_pricing_enabled( $product ) ) {
+                return $original_price_html;
+            }
             $new_price_html = $original_price_html;
 
             //Min max price to show?
@@ -254,11 +275,11 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
 				// Display "excl tax" or "incl tax"
 				$cart = WC()->cart;
 				if ( SOFT79_Rule_Helpers::get_tax_price_display_mode( $cart ) == 'excl' ) {
-					if ( $cart->tax_total > 0 && $cart->prices_include_tax ) {
+					if ( $cart->get_total_tax() > 0 && wc_prices_include_tax() ) {
 						$cart_subtotal .= ' <small>' . WC()->countries->ex_tax_or_vat() . '</small>';
 					}
 				} else {
-					if ( $cart->tax_total > 0 && !$cart->prices_include_tax ) {
+					if ( $cart->get_total_tax() > 0 && ! wc_prices_include_tax() ) {
 						$cart_subtotal .= ' <small>' . WC()->countries->inc_tax_or_vat() . '</small>';
 					}
 				}
@@ -272,6 +293,9 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
          */
         function action_woocommerce_single_product_summary() {
             global $product;
+            if ( ! $product instanceof WC_Product || ! $this->controller ) {
+                return;
+            }
 
             echo '<div class="soft79-single-product-discount-wrap">';
             foreach ( $this->controller->get_valid_rules_for( $product ) as $rule ) {
@@ -328,7 +352,7 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
          * @return type
          */
         public function include_template( $template_name, $variables = array() ) {
-            extract( $variables );
+            extract( $variables, EXTR_SKIP );
             include( $this->get_template_filename( $template_name ) );
         }
 
@@ -340,6 +364,11 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
     }
     function SOFT79_WCPR() {
         return SOFT79_WC_Pricing_Rules_Plugin::instance();
+    }
+
+    /** Only defined when this fork, rather than another copy, owns the runtime. */
+    function soft79_wcpr_get_integration_info() {
+        return SOFT79_WCPR()->get_integration_info();
     }
     SOFT79_WCPR();
 } elseif ( ! function_exists( 'soft79_wc_pricing_admin_notice' ) ) {

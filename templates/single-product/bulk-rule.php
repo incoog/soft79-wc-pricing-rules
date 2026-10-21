@@ -7,13 +7,14 @@
  * @version     1.1.0
  */
 
+defined( 'ABSPATH' ) || exit;
 if ( ! $show_table && ! $show_description ) { return; }
 
 ?>
 <div class='soft79-discount-description' style='margin-bottom:1em'>
 <?php            
 	    if ( $show_description ) {
-	        echo $rule->get_description();
+	        echo wp_kses_post( $rule->get_description() );
 	    }
 
 	    if ( $show_table ):
@@ -24,7 +25,7 @@ if ( ! $show_table && ! $show_description ) { return; }
 					foreach ($table_display_data as $row): 
 					//$discount_perc = round( ( $row["price"] - $product->get_price() ) * 100 /  $product->get_price() ) . ' %';
 					?>
-					<tr><td><?php echo $row["qty"];?></td><td><?php echo $row["price_html"]; ?></td></tr>
+					<tr><td><?php echo esc_html( $row['qty'] ); ?></td><td><?php echo wp_kses_post( $row['price_html'] ); ?></td></tr>
 					<?php 
 					endforeach; ?>
 			</table>

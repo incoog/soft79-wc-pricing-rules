@@ -1,0 +1,6 @@
+{
+  "name": "soft79-pricing-rules-maintenance-tests",
+  "private": true,
+  "scripts": { "test": "node tests/browser-dom.cjs" },
+  "devDependencies": { "jquery": "3.7.1", "jsdom": "30.1.3" }
+}

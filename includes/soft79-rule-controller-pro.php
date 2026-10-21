@@ -1,4 +1,6 @@
 <?php
+defined( 'ABSPATH' ) || exit;
+
 
 //The heart of the magic
 final class SOFT79_Rule_Controller_PRO extends SOFT79_Rule_Controller {
@@ -31,6 +33,8 @@ final class SOFT79_Rule_Controller_PRO extends SOFT79_Rule_Controller {
                 'public' => false,
                 'show_ui' => true,
                 'show_in_menu' => 'woocommerce',
+                'capability_type' => 'product',
+                'map_meta_cap' => true,
                 'supports' => array('title', 'editor'),
                 'has_archive' => false,
             )
@@ -74,6 +78,9 @@ final class SOFT79_Rule_Controller_PRO extends SOFT79_Rule_Controller {
     }
     
     public function get_valid_rules_for( $product ) {    
+        if ( ! SOFT79_Rule_Helpers::is_pricing_enabled( $product ) ) {
+            return array();
+        }
         $valid_rules = parent::get_valid_rules_for( $product );
 
         foreach ( $this->get_global_rules() as $rule ) {

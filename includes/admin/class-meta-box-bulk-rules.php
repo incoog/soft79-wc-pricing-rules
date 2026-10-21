@@ -57,7 +57,7 @@ class SOFT79_Meta_Box_Bulk_Rules {
             <?php
                 $categories   = get_terms( 'product_cat', 'orderby=name&hide_empty=0' );
 
-                if ( $categories ) foreach ( $categories as $cat ) {
+                if ( ! is_wp_error( $categories ) && $categories ) foreach ( $categories as $cat ) {
                     echo '<option value="' . esc_attr( $cat->term_id ) . '"' . selected( in_array( $cat->term_id, $rule->category_ids ), true, false ) . '>' . esc_html( $cat->name ) . '</option>';
                 }
             ?>
@@ -74,7 +74,7 @@ class SOFT79_Meta_Box_Bulk_Rules {
             <?php
                 $categories   = get_terms( 'product_cat', 'orderby=name&hide_empty=0' );
 
-                if ( $categories ) foreach ( $categories as $cat ) {
+                if ( ! is_wp_error( $categories ) && $categories ) foreach ( $categories as $cat ) {
                     echo '<option value="' . esc_attr( $cat->term_id ) . '"' . selected( in_array( $cat->term_id, $rule->exclude_category_ids ), true, false ) . '>' . esc_html( $cat->name ) . '</option>';
                 }
             ?>

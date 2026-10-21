@@ -1,4 +1,6 @@
 <?php
+defined( 'ABSPATH' ) || exit;
+
 
 class SOFT79_Bulk_Rule extends SOFT79_Rule {    
     
@@ -30,8 +32,8 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
         }
         
         //Valid post?
-        if ( ! in_array( $this->post->post_type, array( 'j79_wc_price_rule', 'product', 'product_variation' ) ) ) {
-            throw new Exception( sprintf("Invalid post type %s id %d", $this->post->post_type, $this->id) );
+        if ( ! $this->post || ! in_array( $this->post->post_type, array( 'j79_wc_price_rule', 'product', 'product_variation' ), true ) ) {
+            throw new InvalidArgumentException( 'Invalid SOFT79 rule post.' );
         }
         
         //Products have limited settings
@@ -40,8 +42,8 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
             
             $this->product_ids = array_filter( array_map( 'absint', explode( ',', get_post_meta( $this->post->ID, '_j79_product_ids', true ) ) ) );
             $this->exclude_product_ids = array_filter( array_map( 'absint', explode( ',', get_post_meta( $this->post->ID, '_j79_exclude_product_ids', true ) ) ) );
-            $this->category_ids = (array) get_post_meta( $this->post->ID, '_j79_product_categories', true );
-            $this->exclude_category_ids = (array) get_post_meta( $this->post->ID, '_j79_exclude_product_categories', true );
+            $this->category_ids = array_filter( array_map( 'absint', (array) get_post_meta( $this->post->ID, '_j79_product_categories', true ) ) );
+            $this->exclude_category_ids = array_filter( array_map( 'absint', (array) get_post_meta( $this->post->ID, '_j79_exclude_product_categories', true ) ) );
             $this->user_roles = array_filter( array_map( 'wc_clean', (array) get_post_meta( $this->post->ID, '_j79_user_roles', true ) ) );
             $this->exclude_user_roles = array_filter( array_map( 'wc_clean', (array) get_post_meta( $this->post->ID, '_j79_exclude_user_roles', true ) ) );
         } else {
@@ -86,7 +88,13 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
             if ( ! is_array( $bulk_rules ) ) {
                 $bulk_rules = array();
             }
-            $this->_bulk_rules = $bulk_rules;
+            $this->_bulk_rules = array_values( array_filter( $bulk_rules, static function ( $rule ) {
+                return is_array( $rule ) && isset( $rule['qty_from'], $rule['qty_to'], $rule['price'] )
+                    && is_numeric( $rule['qty_from'] ) && is_numeric( $rule['qty_to'] )
+                    && $rule['qty_from'] > 0 && $rule['qty_to'] >= 0
+                    && ( $rule['qty_to'] == 0 || $rule['qty_to'] >= $rule['qty_from'] )
+                    && is_scalar( $rule['price'] ) && is_numeric( str_replace( '%', '', (string) $rule['price'] ) );
+            } ) );
         }
         return $this->_bulk_rules;
     }
@@ -115,6 +123,9 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
      *  $product WC_Product
      */
     public function is_valid_for_product( $product ) {
+        if ( ! SOFT79_Rule_Helpers::is_pricing_enabled( $product ) ) {
+            return false;
+        }
         $product_id = SOFT79_Rule_Helpers::get_product_id( $product ); 
         $variation_id = SOFT79_Rule_Helpers::get_variation_id( $product ); // false if not a variation
         //error_log("VALID FOR $product_id:$variation_id ???");
@@ -179,6 +190,9 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
         if ( $this->quantity_scope == 'global' ) {
             $this->global_qty = 0;
             foreach ( $cart_items as $cart_item_key => $cart_item ) {
+                if ( ! isset( $cart_item['data'], $cart_item['quantity'] ) || $cart_item['quantity'] <= 0 ) {
+                    continue;
+                }
                 $product = $cart_item['data'];
                 $qty = $cart_item['quantity'];
                 if ( $this->is_valid_for_product( $product ) ) {
@@ -205,6 +219,9 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
 
         $product = $cart_item['data'];
         $quantity = $cart_item['quantity'];
+        if ( ! is_numeric( $quantity ) || $quantity <= 0 ) {
+            return false;
+        }
         $bulk_rules = $this->get_bulk_rules();
 
         if ( ! $this->is_valid_for_product( $product ) || ! $this->is_valid_for_user() ) {
@@ -216,6 +233,9 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
          */
         $accounted_quantity = $this->quantity_scope == 'global' ? $this->global_qty : $quantity;
         $accounted_quantity = apply_filters( 'soft79_wcpr_accounted_quantity', $accounted_quantity, $this, $product, $this->get_cart_items() );
+        if ( ! is_numeric( $accounted_quantity ) || $accounted_quantity <= 0 ) {
+            return false;
+        }
 
         $original_price = SOFT79_WCPR()->controller->get_original_price( $product );
         $prices = new SOFT79_Price_Acumulator();
@@ -232,7 +252,7 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
             {
                 //Rule 'min_qty'
                 if ( $accounted_quantity >= $rule['qty_from'] && ( $accounted_quantity <= $rule['qty_to'] || $rule['qty_to'] == 0 ) ) {
-                    $qty_for_this_rule = $rule['qty_to'] == 0 ? $items_left : $rule['qty_to'];
+                    $qty_for_this_rule = $rule['qty_to'] == 0 ? $items_left : min( $items_left, $rule['qty_to'] );
                     $price_for_this_rule = SOFT79_Rule_Helpers::get_relative_price( $original_price, $rule['price'] );
                     $prices->add( $qty_for_this_rule, $price_for_this_rule );
                 }
@@ -276,6 +296,9 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
      *  (Can be used to calculate min/max price on archive page)
      */
     public function get_price_range( $product ) {
+        if ( ! $this->is_valid_for_product( $product ) || ! $this->is_valid_for_user() ) {
+            return array();
+        }
         //error_log("get_price_range");
         $prices = array();
         $append_original_price = true;
@@ -348,8 +371,8 @@ class SOFT79_Bulk_Rule extends SOFT79_Rule {
             return;
         }
         
-        $show_description = strpos ( $this->display_on_prod_page, "description" ) !== false && $this->get_description() !== '';
-        $show_description = $show_description && $this->post->post_type != 'product';
+        $show_description = $this->post->post_type === 'j79_wc_price_rule'
+            && strpos( $this->display_on_prod_page, 'description' ) !== false && $this->get_description() !== '';
 
         $show_table = strpos ( $this->display_on_prod_page, "table" ) !== false;
 

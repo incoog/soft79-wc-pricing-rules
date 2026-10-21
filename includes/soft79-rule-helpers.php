@@ -1,5 +1,21 @@
 <?php
+defined( 'ABSPATH' ) || exit;
+
 class SOFT79_Rule_Helpers {
+
+    /**
+     * Gate all pricing, display and accumulated quantities for a product.
+     * Integrations must accept both parent products and variation objects.
+     *
+     * @param WC_Product $product Product being evaluated.
+     * @return bool
+     */
+    public static function is_pricing_enabled( $product ) {
+        if ( ! $product instanceof WC_Product ) {
+            return false;
+        }
+        return (bool) apply_filters( 'soft79_wcpr_product_pricing_enabled', true, $product );
+    }
 
     /**     
      *  Get price incl/excl tax for cart (depends on setting "woocommerce_tax_display_cart" in WooCommerce)     
@@ -23,7 +39,7 @@ class SOFT79_Rule_Helpers {
             return $cart->get_tax_price_display_mode();
         }
 
-        return $cart->tax_display_cart;
+        return get_option( 'woocommerce_tax_display_cart', 'incl' );
     }
     
 	/**
@@ -34,7 +50,12 @@ class SOFT79_Rule_Helpers {
 	 * @return void
 	 */
     static function get_relative_price( $orig_price, $new_price) {
-        if ($new_price == '') {
+        if ( ! is_numeric( $orig_price ) || ! is_scalar( $new_price ) || trim( (string) $new_price ) === '' ) {
+            return $orig_price;
+        }
+        $new_price = trim( (string) $new_price );
+        $number = str_replace( '%', '', $new_price );
+        if ( ! is_numeric( $number ) ) {
             return $orig_price;
         }
         
@@ -52,26 +73,24 @@ class SOFT79_Rule_Helpers {
         }
         //error_log("get_relative_price of " . $orig_price . " , " . $new_price . " is: " . $return);
         
-        return $return;
+        return max( 0, (float) $return );
     }
 
 //WC3.0.0 Helpers
 
     public static function get_product_prop( $product, $prop ) {
-        //Since WC 3.0
-        if ( is_callable( array( $product, 'get_prop' ) ) ) {
-            return $product->get_prop( $prop );
+        $getter = 'get_' . $prop;
+        if ( is_callable( array( $product, $getter ) ) ) {
+            return $product->$getter();
         }
-        return $product->$prop;
+        return null;
     }
 
     public static function set_product_prop( $product, $prop, $value ) {
-        //Since WC 3.0
-        if ( is_callable( array( $product, 'set_prop' ) ) ) {
-            $product->set_prop( $prop, $value );
-            return;
+        $setter = 'set_' . $prop;
+        if ( is_callable( array( $product, $setter ) ) ) {
+            $product->$setter( $value );
         }
-        $product->$prop = $value;
     }    
 
     /**

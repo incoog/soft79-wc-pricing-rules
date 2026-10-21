@@ -30,8 +30,6 @@ final class SOFT79_Bulk_Pricing_Admin {
 
         add_action( 'woocommerce_product_options_general_product_data', array( $this, 'action_admin_show_price_rules' ) );
         add_action( 'woocommerce_variation_options_pricing', array( $this, 'action_admin_show_variation_price_rules' ), 10, 3 );
-        //Javascript code for dynamic adding of rows
-        wp_enqueue_script( 'soft79_wcpr_admin', SOFT79_WCPR()->plugin_url() . '/assets/js/admin/admin.js'  , array(), SOFT79_WCPR()->get_version() );
         
         //Admin page
         add_action( 'admin_init', array( $this, 'action_admin_init' ) );    
@@ -308,32 +306,22 @@ final class SOFT79_Bulk_Pricing_Admin {
      * @return array        validated options.
      */
     public function validate_options( $input ) {
-        // Create our array for storing the validated options.
+        $input = is_array( $input ) ? $input : array();
         $output = array();
-    
-        // Loop through each of the incoming options.
-        foreach ( $input as $key => $value ) {
-    
-            // Check to see if the current option has a value. If so, process it.
-            if ( isset( $input[$key] ) ) {    
-                // Strip all HTML and PHP tags and properly handle quoted strings.
-                $output[$key] = strip_tags( stripslashes( $input[$key] ) );
-            }
-        }
-        
-        //checkboxes must have value 0 if not checked
         $cbs = array(
             'show_min_max_price',
             'show_min_max_price_singular',
             'show_cart_itemprice_as_from_to',
+            'show_cart_subtotal_as_from_to',
             'hide_rules_not_in_stock'
         );
 
         foreach ( $cbs as $cb ) {
-            if ( ! isset( $output[$cb] ) ) {
-                $output[$cb] = '0';
-            }
+            $output[$cb] = isset( $input[$cb] ) && is_scalar( $input[$cb] ) && '1' === (string) $input[$cb] ? '1' : '0';
         }
+        $output['rule_choice'] = isset( $input['rule_choice'] ) && 'first' === $input['rule_choice'] ? 'first' : 'best';
+        $output['pack_price_format'] = isset( $input['pack_price_format'] ) && is_scalar( $input['pack_price_format'] )
+            && in_array( (string) $input['pack_price_format'], array( '0', '1', '2' ), true ) ? (string) $input['pack_price_format'] : '0';
         
         return $output;
     }
@@ -372,7 +360,7 @@ final class SOFT79_Bulk_Pricing_Admin {
         }
         
         // Dont' save meta boxes for revisions or autosaves
-        if ( defined( 'DOING_AUTOSAVE' ) || is_int( wp_is_post_revision( $post ) ) || is_int( wp_is_post_autosave( $post ) ) ) {
+        if ( ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) || wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
             return;
         }
 
@@ -390,7 +378,8 @@ final class SOFT79_Bulk_Pricing_Admin {
             //Global pricing rule
             case "j79_wc_price_rule":
                 // Check the nonce
-                if ( empty( $_POST['soft79_meta_nonce'] ) || ! wp_verify_nonce( $_POST['soft79_meta_nonce'], 'soft79_save_data' ) ) {
+                if ( ! current_user_can( 'manage_woocommerce' ) || empty( $_POST['soft79_meta_nonce'] ) || ! is_string( $_POST['soft79_meta_nonce'] )
+                    || ! wp_verify_nonce( wp_unslash( $_POST['soft79_meta_nonce'] ), 'soft79_save_data' ) ) {
                     return;
                 }
 
@@ -399,8 +388,11 @@ final class SOFT79_Bulk_Pricing_Admin {
 
             //Product pricing rule
             case "product":
+                if ( ! $this->valid_product_rules_nonce() ) {
+                    return;
+                }
                 if ( isset( $_POST['_j79_rules'] ) ) {
-                    $bulk_rules = $this->get_bulk_rules_from_form( $_POST['_j79_rules'] );
+                    $bulk_rules = $this->get_bulk_rules_from_form( wp_unslash( $_POST['_j79_rules'] ) );
                     //Remove the postmeta if no rules specified
                     $this->update_post_bulk_rules( $post_id, $bulk_rules );
                 }
@@ -417,7 +409,12 @@ final class SOFT79_Bulk_Pricing_Admin {
     }
     
     public function action_admin_enqueue_scripts() {
-        wp_enqueue_style( 'soft79_bulk_admin_styles', SOFT79_WCPR()->plugin_url() . '/assets/css/admin.css', array(), "test6" );
+        $screen = get_current_screen();
+        if ( ! $screen || ! in_array( $screen->id, array( 'product', 'edit-product', 'j79_wc_price_rule', 'settings_page_j79-price-rules' ), true ) ) {
+            return;
+        }
+        wp_enqueue_style( 'soft79_bulk_admin_styles', SOFT79_WCPR()->plugin_url() . '/assets/css/admin.css', array(), SOFT79_WCPR()->get_version() );
+        wp_enqueue_script( 'soft79_wcpr_admin', SOFT79_WCPR()->plugin_url() . '/assets/js/admin/admin.js', array( 'jquery' ), SOFT79_WCPR()->get_version(), true );
     }
     
     /**
@@ -441,6 +438,10 @@ final class SOFT79_Bulk_Pricing_Admin {
      */
     public function get_bulk_rules_from_form( $form_bulk_rules ) {
         $bulk_rules = array();
+        if ( ! is_array( $form_bulk_rules ) || ! isset( $form_bulk_rules['price'], $form_bulk_rules['qty_from'], $form_bulk_rules['qty_to'] )
+            || ! is_array( $form_bulk_rules['price'] ) || ! is_array( $form_bulk_rules['qty_from'] ) || ! is_array( $form_bulk_rules['qty_to'] ) ) {
+            return null;
+        }
 
         //$form_bulk_rules is shaped like this: 
         // [
@@ -451,6 +452,11 @@ final class SOFT79_Bulk_Pricing_Admin {
 
         //Placing of the values in array (safe)
         foreach( array_keys( $form_bulk_rules['price'] ) as $idx ) {
+            if ( ! isset( $form_bulk_rules['qty_from'][$idx], $form_bulk_rules['qty_to'][$idx] )
+                || ! is_scalar( $form_bulk_rules['qty_from'][$idx] ) || ! is_scalar( $form_bulk_rules['qty_to'][$idx] )
+                || ! is_scalar( $form_bulk_rules['price'][$idx] ) ) {
+                continue;
+            }
 
             $qty_from = intval( $form_bulk_rules['qty_from'][$idx] );
             $qty_to = intval( $form_bulk_rules['qty_to'][$idx] );
@@ -458,12 +464,13 @@ final class SOFT79_Bulk_Pricing_Admin {
             
             //Parse percentage or price
             if ( strstr( $price, '%' ) ) {
-                $price = wc_format_decimal( trim( str_replace( '%', '', $price ) ) ) . "%";
+                $number = wc_format_decimal( trim( str_replace( '%', '', $price ) ) );
+                $price = is_numeric( $number ) ? $number . '%' : '';
             } else {
                 $price = wc_format_decimal( trim( $price ) );
             }
             
-            if ( ($qty_from > 0 || $qty_to > 0 ) && $price !== '' ) {
+            if ( $qty_from > 0 && ( $qty_to === 0 || $qty_to >= $qty_from ) && $price !== '' ) {
                 $bulk_rules[] = array( 
                     "qty_from" =>  $qty_from,
                     "qty_to" => $qty_to,
@@ -531,7 +538,7 @@ final class SOFT79_Bulk_Pricing_Admin {
                 <input placeholder="<?php 
                     esc_attr_e( 'Price', 'woocommerce' ); 
                 ?>" class="input-text wc_input_price last" size="6" type="text" name="<?php echo $field_name; ?>[price][]" value="<?php
-                    echo wc_format_localized_price( $price );
+                    echo esc_attr( wc_format_localized_price( html_entity_decode( $price, ENT_QUOTES, 'UTF-8' ) ) );
                 ?>" />
                 <a href="#" class="soft79_wcpr_delete_row">X</a>
             </span>
@@ -540,6 +547,9 @@ final class SOFT79_Bulk_Pricing_Admin {
     }
     
     function render_admin_bulk_rules( $bulk_rules, $variation_loop = null  ) {
+        $bulk_rules = is_array( $bulk_rules ) ? $bulk_rules : array();
+        $nonce_name = $variation_loop === null ? '_j79_rules_nonce' : '_j79_variable_nonce[' . absint( $variation_loop ) . ']';
+        wp_nonce_field( 'soft79_save_product_rules', $nonce_name, false );
 
         $var_idx = $variation_loop === null ? '' : '[' . absint( $variation_loop ) . ']';
 
@@ -590,11 +600,11 @@ final class SOFT79_Bulk_Pricing_Admin {
 
     public function render_variation_bulk_rules( $bulk_rules, $loop ) {
         echo "<div>";
-        echo '<p class="form-row form-row-full">';
+        echo '<div class="form-row form-row-full">';
 
         $this->render_admin_bulk_rules( $bulk_rules, $loop );
 
-        echo '</p>';
+        echo '</div>';
         echo "</div>";
 
     }
@@ -609,15 +619,22 @@ final class SOFT79_Bulk_Pricing_Admin {
     }
 
     public function action_save_product_variation( $variation_id, $index ) {
-        if ( ! $_POST['_j79_variable_rules'] ) {
+        if ( ! current_user_can( 'edit_post', $variation_id ) || ! $this->valid_product_rules_nonce( $index )
+            || ! isset( $_POST['_j79_variable_rules'][$index] ) || ! is_array( $_POST['_j79_variable_rules'] ) ) {
             return;
         }
 
         $rules = $_POST['_j79_variable_rules'];
-        $rules = $rules[ $index ];
+        $rules = wp_unslash( $rules[ $index ] );
         
         $bulk_rules = $this->get_bulk_rules_from_form( $rules );
         $this->update_post_bulk_rules( $variation_id, $bulk_rules );
+    }
+
+    private function valid_product_rules_nonce( $variation_index = null ) {
+        $nonce = $variation_index === null ? ( isset( $_POST['_j79_rules_nonce'] ) ? $_POST['_j79_rules_nonce'] : null )
+            : ( isset( $_POST['_j79_variable_nonce'][$variation_index] ) ? $_POST['_j79_variable_nonce'][$variation_index] : null );
+        return is_string( $nonce ) && wp_verify_nonce( wp_unslash( $nonce ), 'soft79_save_product_rules' );
     }
     
     /**
@@ -628,33 +645,27 @@ final class SOFT79_Bulk_Pricing_Admin {
      * @return void
      */
     public function save_admin_bulk_rules( $post_id, $post ) {
-    // Save
-        
-        if ( isset( $_POST['_j79_rule_type'] ) ) {
-            update_post_meta( $post_id, '_j79_rule_type', wc_clean( $_POST['_j79_rule_type'] ) );
-        }
-        if ( isset( $_POST['_j79_quantity_scope'] ) ) {
-            update_post_meta( $post_id, '_j79_quantity_scope', wc_clean( $_POST['_j79_quantity_scope'] ) );
-        }
-        if ( isset( $_POST['_j79_display_on_prod_page'] ) ) {
-            update_post_meta( $post_id, '_j79_display_on_prod_page', wc_clean( $_POST['_j79_display_on_prod_page'] ) );
-        }
+        update_post_meta( $post_id, '_j79_rule_type', 'bulk' );
+        $scope = isset( $_POST['_j79_quantity_scope'] ) && 'global' === $_POST['_j79_quantity_scope'] ? 'global' : 'product';
+        update_post_meta( $post_id, '_j79_quantity_scope', $scope );
+        $display = isset( $_POST['_j79_display_on_prod_page'] ) && is_string( $_POST['_j79_display_on_prod_page'] )
+            ? wp_unslash( $_POST['_j79_display_on_prod_page'] ) : 'description,table';
+        update_post_meta( $post_id, '_j79_display_on_prod_page', in_array( $display, array( 'description,table', 'description', 'table', 'nothing' ), true ) ? $display : 'description,table' );
         
         if ( isset($_POST['_j79_rules']) ) {
-            $bulk_rules = $this->get_bulk_rules_from_form( $_POST['_j79_rules'] );
+            $bulk_rules = $this->get_bulk_rules_from_form( wp_unslash( $_POST['_j79_rules'] ) );
             $this->update_post_bulk_rules( $post_id, $bulk_rules );
         }
 
         //Extended fields
-        $user_roles            = isset( $_POST['_j79_user_roles'] ) ? $_POST['_j79_user_roles'] : '';
-        $exclude_user_roles    = isset( $_POST['_j79_exclude_user_roles'] ) ? $_POST['_j79_exclude_user_roles'] : '';
+        $user_roles = isset( $_POST['_j79_user_roles'] ) ? $this->clean_role_list( wp_unslash( $_POST['_j79_user_roles'] ) ) : array();
+        $exclude_user_roles = isset( $_POST['_j79_exclude_user_roles'] ) ? $this->clean_role_list( wp_unslash( $_POST['_j79_exclude_user_roles'] ) ) : array();
         
         $product_ids            = isset( $_POST['_j79_product_ids'] ) ? self::comma_separated_int_array(  $_POST['_j79_product_ids'] ) : '';
         $exclude_product_ids    = isset( $_POST['_j79_exclude_product_ids'] ) ? self::comma_separated_int_array(  $_POST['_j79_exclude_product_ids'] ) : '';
 
-        $product_categories         = isset( $_POST['_j79_product_categories'] ) ? array_map( 'intval', $_POST['_j79_product_categories'] ) : array();
-        $exclude_product_categories = isset( $_POST['_j79_exclude_product_categories'] ) ? array_map( 'intval', $_POST['_j79_exclude_product_categories'] ) : array();
-        $exclude_sale_items     = isset( $_POST['exclude_sale_items'] ) ? 'yes' : 'no';    
+        $product_categories = isset( $_POST['_j79_product_categories'] ) ? $this->clean_id_list( $_POST['_j79_product_categories'] ) : array();
+        $exclude_product_categories = isset( $_POST['_j79_exclude_product_categories'] ) ? $this->clean_id_list( $_POST['_j79_exclude_product_categories'] ) : array();
 
         update_post_meta( $post_id, '_j79_user_roles', $user_roles );
         update_post_meta( $post_id, '_j79_exclude_user_roles', $exclude_user_roles );
@@ -662,7 +673,6 @@ final class SOFT79_Bulk_Pricing_Admin {
         update_post_meta( $post_id, '_j79_exclude_product_ids', $exclude_product_ids );
         update_post_meta( $post_id, '_j79_product_categories', $product_categories );
         update_post_meta( $post_id, '_j79_exclude_product_categories', $exclude_product_categories );
-        update_post_meta( $post_id, '_j79_exclude_sale_items', $exclude_sale_items );
 
     }
 
@@ -688,9 +698,20 @@ final class SOFT79_Bulk_Pricing_Admin {
      */
     public static function comma_separated_int_array( $int_array ) {
         //Source can be a comma separated string (select2) , or an int array (chosen)
+        if ( ! is_array( $int_array ) && ! is_scalar( $int_array ) ) {
+            return '';
+        }
         if ( ! is_array( $int_array) ) {
             $int_array = explode( ',', $int_array );
         }
-        return implode( ',', array_filter( array_map( 'intval', $int_array ) ) );
+        return implode( ',', array_unique( array_filter( array_map( 'absint', array_filter( $int_array, 'is_scalar' ) ) ) ) );
+    }
+
+    private function clean_id_list( $values ) {
+        return array_values( array_unique( array_filter( array_map( 'absint', array_filter( (array) $values, 'is_scalar' ) ) ) ) );
+    }
+
+    private function clean_role_list( $values ) {
+        return array_values( array_unique( array_filter( array_map( 'sanitize_key', array_filter( (array) $values, 'is_scalar' ) ) ) ) );
     }
 }
