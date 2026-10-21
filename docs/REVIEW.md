@@ -1,6 +1,6 @@
 # Review and changes
 
-All executable PHP, JavaScript, templates, CSS and configuration in the supplied 26-file plugin were read as a connected system. Translation catalogs were retained. Upstream history was inspected and the live archive matched tag 1.4.3 after newline normalization.
+The original PHP, JavaScript, templates, CSS and configuration were reviewed as a connected system. Translation catalogs were retained. The comparison baseline for fork changes is upstream master commit `3d495d5a79a92da069df005a6157ca92a39a68e9`.
 
 | Finding | Resolution |
 | --- | --- |
@@ -11,7 +11,7 @@ All executable PHP, JavaScript, templates, CSS and configuration in the supplied
 | Repeated totals or changing exclusions can retain/compound a price | Repeatable recalculation and a reentrancy guard |
 | Multiple cart lines sharing an ID overwrite their price baselines | Temporary state belongs to the individual product object |
 | Finite tier can apply more units than exist on a line | Cap tier quantity at remaining line quantity |
-| No reliable per-product integration contract | Versioned active-fork API and product gate throughout calculation/display |
+| No general per-product exclusion hook | Add a product filter throughout calculation/display and a generic fork-identification helper |
 | Excluded products could otherwise unlock cumulative discounts | Gate rule eligibility during cart discovery |
 | Malformed rows can trigger warnings or division by zero | Validate stored rows, posted shapes, quantity boundaries and relative prices |
 | Extreme negative discounts can produce negative prices | Clamp computed unit prices to zero |
@@ -33,4 +33,4 @@ All executable PHP, JavaScript, templates, CSS and configuration in the supplied
 
 Stored rule keys, settings, parent inheritance, first/best selection, fixed amounts, percentages, standard pack rules, translations, template paths and existing CSS hooks are retained. No SOFT79 rule or price data is deleted or migrated on activation. Invalid legacy rows are ignored at runtime, not silently deleted from storage.
 
-Remaining integration boundaries: third-party plugins that mutate cart prices after SOFT79 or save cart product objects, theme template overrides, multilingual plugin behavior, grouped/bundled/subscription products, cumulative pack allocation across multiple different order lines, and exact block-cart display behavior require a real staging installation. The tests cover the supplied rule engine and optional integration; they are not a complete security certification or a promise of compatibility with every extension. No HPOS or Cart/Checkout Blocks compatibility flag is advertised without end-to-end validation.
+Remaining integration boundaries: third-party plugins that mutate cart prices after SOFT79 or save cart product objects, theme template overrides, multilingual plugin behavior, grouped/bundled/subscription products, cumulative pack allocation across multiple different order lines, and exact block-cart display behavior require a real staging installation. The tests cover the rule engine and product exclusion hook; they are not a complete security certification or a promise of compatibility with every extension. No HPOS or Cart/Checkout Blocks compatibility flag is advertised without end-to-end validation.

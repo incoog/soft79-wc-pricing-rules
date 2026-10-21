@@ -1,10 +1,9 @@
 <?php
 require __DIR__ . '/bootstrap.php';
 require dirname( __DIR__ ) . '/soft79-wc-pricing-rules.php';
-require dirname( __DIR__ ) . '/examples/campaign-plugin/class-soft79-integration.php';
 $c = controller();
 expect( $c->options['rule_choice'] === 'best', 'PRO controller receives settings' );
-expect( soft79_wcpr_get_integration_info()['api_version'] === 1, 'Fork exposes API v1' );
+expect( soft79_wcpr_get_integration_info()['api_version'] === 1, 'Fork exposes supported hook capability version' );
 
 $a = new WC_Product( 1, 100 );
 set_rules( 1, array( tier( 3, 0, '-10%' ) ) );
@@ -25,18 +24,19 @@ WC()->cart->items = array( cart_line( $a, 3 ), cart_line( $same_id, 3 ) );
 $c->execute(); price_is( $same_id, 180, 'Separate cart line of same product retains own price' );
 price_is( $a, 135, 'First cart line retains own baseline' );
 
-$enabled = false; $managed = array( 1 );
-$adapter = new Campaign_Soft79_Integration(
-    static function () use ( &$enabled ) { return $enabled; },
-    static function ( $p ) use ( &$managed ) { return in_array( $p->get_id(), $managed, true ) || in_array( $p->get_parent_id(), $managed, true ); }
-);
-expect( Campaign_Soft79_Integration::runtime_state() === 'fork_active', 'Active fork recognized by API' );
-expect( SOFT79_Rule_Helpers::is_pricing_enabled( $a ), 'Switch off preserves SOFT79' );
+expect( SOFT79_Rule_Helpers::is_pricing_enabled( $a ), 'Product pricing enabled without a subscriber' );
+$enabled = false; $excluded = array( 1 );
+add_filter( 'soft79_wcpr_product_pricing_enabled', static function ( $allowed, $p ) use ( &$enabled, &$excluded ) {
+    if ( ! $allowed || ! $enabled ) return $allowed;
+    return ! in_array( $p->get_id(), $excluded, true ) && ! in_array( $p->get_parent_id(), $excluded, true );
+}, 10, 2 );
+expect( soft79_wcpr_get_integration_info()['fork_id'] === 'incoog/soft79-wc-pricing-rules', 'Running fork identifies itself' );
+expect( SOFT79_Rule_Helpers::is_pricing_enabled( $a ), 'Inactive exclusion filter preserves SOFT79' );
 $enabled = true;
-$c->execute(); price_is( $a, 150, 'Switch on removes already applied SOFT79 discount' );
+$c->execute(); price_is( $a, 150, 'Exclusion removes already applied SOFT79 discount' );
 price_is( $same_id, 200, 'Same product excluded on all cart lines' );
 expect( $c->get_valid_rules_for( $a ) === array(), 'Exclusion gates product and global rules' );
-expect( SOFT79_WCPR()->price_html( 'campaign-price', $a ) === 'campaign-price', 'Exclusion leaves campaign price HTML unchanged' );
+expect( SOFT79_WCPR()->price_html( 'existing-price', $a ) === 'existing-price', 'Exclusion leaves existing price HTML unchanged' );
 expect( $c->get_sale_price( $a ) === false, 'Exclusion gates one-unit offer display' );
 $rule = new SOFT79_Bulk_Rule( 1 );
 expect( $rule->get_price_range( $a ) === array(), 'Direct range calculation also gated' );
@@ -44,19 +44,19 @@ ob_start(); $rule->render_product_page_html( $a ); $html = ob_get_clean();
 expect( $html === '', 'Direct table rendering also gated' );
 $variation = new WC_Product_Variation( 2, 80, 1 );
 set_rules( 2, array( tier( 1, 0, '-20%' ) ) );
-expect( $c->get_valid_rules_for( $variation ) === array(), 'Adapter handles parent exclusion for variations' );
+expect( $c->get_valid_rules_for( $variation ) === array(), 'Subscriber can exclude variations by parent' );
 $data = SOFT79_WCPR()->action_woocommerce_available_variation( array(), $a, $variation );
 expect( $data['j79_soft79_single_product_discount'] === '', 'Variation AJAX table is empty when excluded' );
-$enabled = false; $c->execute(); price_is( $a, 135, 'Switch off restores normal rule calculation' );
+$enabled = false; $c->execute(); price_is( $a, 135, 'Removing exclusion restores normal rule calculation' );
 
-// Global quantity rules must not count campaign products toward thresholds.
+// Global quantity rules must not count excluded products toward thresholds.
 $enabled = true;
 $b = new WC_Product( 3, 100 );
 $GLOBALS['posts'][99] = (object) array( 'ID' => 99, 'post_type' => 'j79_wc_price_rule', 'post_content' => 'Offer' );
 $GLOBALS['meta'][99] = array( '_j79_rule_type' => 'bulk', '_j79_quantity_scope' => 'global', '_j79_bulk_rules' => array( tier( 3, 0, '-10%' ) ) );
 $a->set_price( 80 ); $c = controller();
 WC()->cart->items = array( cart_line( $a, 2 ), cart_line( $b, 1 ) );
-$c->execute(); price_is( $a, 80, 'Campaign price is untouched in mixed cart' );
+$c->execute(); price_is( $a, 80, 'Excluded product price is untouched in mixed cart' );
 price_is( $b, 100, 'Excluded quantity does not unlock global discount' );
 WC()->cart->items[1]['quantity'] = 3;
 $c->execute(); price_is( $b, 90, 'Eligible quantity still unlocks discount' );
@@ -147,8 +147,6 @@ expect( $GLOBALS['post'] === $before, 'Description restores surrounding loop pos
 add_filter( 'the_content', static function () { throw new RuntimeException( 'shortcode error' ); } );
 try { $rule->get_description(); } catch ( RuntimeException $e ) {}
 expect( $GLOBALS['post'] === $before, 'Description restores loop even if content callback throws' );
-ob_start(); Campaign_Soft79_Integration::render_setting( 'campaign[soft79]', false ); $html = ob_get_clean();
-expect( strpos( $html, 'type="checkbox"' ) !== false && strpos( $html, 'checked="checked"' ) === false, 'Switch appears only for supported active fork and defaults off' );
 add_filter( 'soft79_wcpr_product_pricing_enabled', static function () { return false; }, 5 );
-expect( apply_filters( 'soft79_wcpr_product_pricing_enabled', true, $a ) === false, 'Adapter preserves exclusions from other integrations' );
+expect( apply_filters( 'soft79_wcpr_product_pricing_enabled', true, $a ) === false, 'Exclusion subscriber preserves an incoming false' );
 echo 'PASS ' . $GLOBALS['assertions'] . ' assertions; PHP ' . PHP_VERSION . "\n";

@@ -17,10 +17,6 @@ jobs:
       - run: php tests/lint.php
       - run: php tests/regression.php
       - run: php tests/boot.php && php tests/boot.php original-first
-      - run: |
-          for state in none original_active original_inactive fork_inactive fork_active unsupported_fork other_fork; do
-            php tests/detection.php "$state"
-          done
   javascript:
     runs-on: ubuntu-latest
     steps:

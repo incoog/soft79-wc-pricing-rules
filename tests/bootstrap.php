@@ -2,7 +2,6 @@
 // Deliberately small WP/WC doubles: these tests exercise the shipped PHP logic,
 // not WordPress database integration or the live customer's theme.
 define( 'ABSPATH', __DIR__ . '/' );
-define( 'WP_PLUGIN_DIR', __DIR__ . '/plugins' );
 error_reporting( E_ALL );
 set_error_handler( static function ( $severity, $message, $file, $line ) {
     throw new ErrorException( $message, 0, $severity, $file, $line );
@@ -12,8 +11,6 @@ $GLOBALS['posts'] = array();
 $GLOBALS['meta'] = array();
 $GLOBALS['options'] = array();
 $GLOBALS['can_edit'] = true;
-$GLOBALS['installed_plugins'] = array();
-$GLOBALS['fork_headers'] = array();
 $GLOBALS['post'] = null;
 function add_filter( $name, $callback, $priority = 10, $args = 1 ) { $GLOBALS['hooks'][$name][$priority][] = array( $callback, $args ); }
 function add_action( $name, $callback, $priority = 10, $args = 1 ) { add_filter( $name, $callback, $priority, $args ); }
@@ -72,8 +69,6 @@ function plugins_url( $path = '', $file = '' ) { return '/plugins/soft79-wc-pric
 function plugin_dir_path( $file ) { return dirname( $file ) . '/'; }
 function locate_template( $name ) { return false; }
 function wp_enqueue_script( ...$args ) {}
-function get_plugins() { return $GLOBALS['installed_plugins']; }
-function get_file_data( $file, $headers ) { return array( 'fork_id' => isset( $GLOBALS['fork_headers'][$file] ) ? $GLOBALS['fork_headers'][$file] : '' ); }
 class WooCommerce {
     public $cart;
     public function __construct() { $this->cart = new Test_Cart(); }
