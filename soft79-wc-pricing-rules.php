@@ -3,7 +3,7 @@
  * Plugin Name: SOFT79 Pricing Rules for WooCommerce (Community fork)
  * Plugin URI: https://github.com/incoog/soft79-wc-pricing-rules
  * Description: Bulk pricing rules for WooCommerce, with maintenance fixes and a filter hook for excluding individual products.
- * Version: 1.5.1
+ * Version: 1.5.2
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -42,7 +42,7 @@ if ( ! class_exists( 'SOFT79_WC_Pricing_Rules_Plugin' ) ) {
     include_once('includes/soft79-rule-controller-pro.php');
 
     final class SOFT79_WC_Pricing_Rules_Plugin {
-        public $version = '1.5.1';
+        public $version = '1.5.2';
 
         public $admin = null;
 
